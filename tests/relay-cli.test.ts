@@ -1,9 +1,13 @@
+import { execFile } from "node:child_process";
 import { promises as fs } from "node:fs";
+import { promisify } from "node:util";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildProgram } from "../src/cli.js";
 import { initWorkspace } from "../src/core/workspace.js";
 import { withTempDir } from "./helpers.js";
+
+const execFileAsync = promisify(execFile);
 
 describe("Relay CLI", () => {
   it("registers an additive Relay command group", () => {
@@ -69,6 +73,11 @@ describe("Relay CLI", () => {
     await withTempDir(async (dir) => {
       await initWorkspace(dir);
       await fs.writeFile(path.join(dir, "README.md"), "# Relay\n", "utf8");
+      await execFileAsync("git", ["init"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.email", "relay@example.test"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.name", "Relay Test"], { cwd: dir });
+      await execFileAsync("git", ["add", "README.md"], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "baseline"], { cwd: dir });
       await fs.writeFile(path.join(dir, ".env"), "OPENAI_API_KEY=secret\n", "utf8");
 
       const originalCwd = process.cwd();
@@ -83,13 +92,24 @@ describe("Relay CLI", () => {
       expect(runs).toHaveLength(1);
       const manifest = JSON.parse(
         await fs.readFile(path.join(dir, ".briefops", "relay", "runs", runs[0] as string, "manifest.json"), "utf8")
-      ) as { task: string; network_permitted: boolean; included_paths: string[]; excluded: Record<string, number> };
+      ) as {
+        task: string;
+        network_permitted: boolean;
+        included_paths: string[];
+        excluded: Record<string, number>;
+        baseline_sha: string;
+        head_sha: string;
+        dirty: boolean;
+      };
       expect(manifest).toMatchObject({
         task: "Inspect docs",
         network_permitted: false,
         included_paths: ["README.md"],
         excluded: { secret: 1 }
       });
+      expect(manifest.baseline_sha).toMatch(/^[a-f0-9]{40}$/);
+      expect(manifest.head_sha).toBe(manifest.baseline_sha);
+      expect(manifest.dirty).toBe(true);
     });
   });
 
@@ -110,7 +130,10 @@ describe("Relay CLI", () => {
         evidence_count: 1,
         total_bytes: 12,
         included_paths: ["README.md"],
-        excluded: { secret: 1 }
+        excluded: { secret: 1 },
+        baseline_sha: "a".repeat(40),
+        head_sha: "b".repeat(40),
+        dirty: false
       })
     ).toBeTruthy();
     expect(() =>
@@ -122,8 +145,44 @@ describe("Relay CLI", () => {
         evidence_count: 1,
         total_bytes: 12,
         included_paths: ["/Users/simon/private.txt"],
-        excluded: {}
+        excluded: {},
+        baseline_sha: "a".repeat(40),
+        head_sha: "b".repeat(40),
+        dirty: false
       })
     ).toThrow();
+  });
+
+  it("records the Git baseline and dirty state for a Relay run", async () => {
+    const module = await import("../src/core/relayGit.js").catch(() => undefined);
+    const inspect = (module as
+      | {
+          inspectRelayGit?: (options: { cwd: string; baselineRef: string }) => Promise<{
+            root: string;
+            baselineSha: string;
+            headSha: string;
+            dirty: boolean;
+          }>;
+        }
+      | undefined)?.inspectRelayGit;
+
+    expect(inspect).toBeTypeOf("function");
+    if (!inspect) return;
+
+    await withTempDir(async (dir) => {
+      await execFileAsync("git", ["init"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.email", "relay@example.test"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.name", "Relay Test"], { cwd: dir });
+      await fs.writeFile(path.join(dir, "README.md"), "baseline\n", "utf8");
+      await execFileAsync("git", ["add", "README.md"], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "baseline"], { cwd: dir });
+      await fs.writeFile(path.join(dir, "README.md"), "changed\n", "utf8");
+
+      const metadata = await inspect({ cwd: dir, baselineRef: "HEAD" });
+      expect(await fs.realpath(metadata.root)).toBe(await fs.realpath(dir));
+      expect(metadata.baselineSha).toMatch(/^[a-f0-9]{40}$/);
+      expect(metadata.headSha).toBe(metadata.baselineSha);
+      expect(metadata.dirty).toBe(true);
+    });
   });
 });

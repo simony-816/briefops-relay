@@ -2,6 +2,7 @@ import path from "node:path";
 import type { Command } from "commander";
 import { collectRelayEvidence } from "../core/relayEvidence.js";
 import { BriefOpsError } from "../core/errors.js";
+import { inspectRelayGit } from "../core/relayGit.js";
 import { formatDateStamp, workspacePaths } from "../core/paths.js";
 import { writeTextFileAtomic } from "../core/storage.js";
 import { requireWorkspace } from "../core/workspace.js";
@@ -23,6 +24,7 @@ export function registerRelayCommands(program: Command): void {
 
       const cwd = process.cwd();
       await requireWorkspace(cwd);
+      const git = await inspectRelayGit({ cwd, baselineRef: "HEAD" });
       const collection = await collectRelayEvidence({
         root: cwd,
         maxFiles: 40,
@@ -43,7 +45,10 @@ export function registerRelayCommands(program: Command): void {
           0
         ),
         included_paths: includedPaths,
-        excluded: collection.excluded
+        excluded: collection.excluded,
+        baseline_sha: git.baselineSha,
+        head_sha: git.headSha,
+        dirty: git.dirty
       });
 
       await writeTextFileAtomic(path.join(runDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);

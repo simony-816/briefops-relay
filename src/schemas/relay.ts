@@ -19,7 +19,10 @@ export const relayManifestSchema = z.object({
   evidence_count: z.number().int().nonnegative(),
   total_bytes: z.number().int().nonnegative(),
   included_paths: z.array(repositoryRelativePathSchema),
-  excluded: z.record(z.string(), z.number().int().nonnegative())
+  excluded: z.record(z.string(), z.number().int().nonnegative()),
+  baseline_sha: z.string().regex(/^[a-f0-9]{40}$/),
+  head_sha: z.string().regex(/^[a-f0-9]{40}$/),
+  dirty: z.boolean()
 });
 
 export type RelayManifest = z.infer<typeof relayManifestSchema>;
