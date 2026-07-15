@@ -394,4 +394,162 @@ describe("Relay CLI", () => {
       validateAudit(validateContract(contract, [sourceEvidence]), { ...audit, findings: [] }, [sourceEvidence, changeEvidence])
     ).toThrow("must have exactly one finding");
   });
+
+  it("renders a verified handoff from validated artifacts without absolute paths", async () => {
+    const module = await import("../src/core/relayHandoff.js").catch(() => undefined);
+    const render = (module as
+      | {
+          renderRelayHandoff?: (input: {
+            contract: unknown;
+            audit: unknown;
+            evidence: unknown;
+          }) => string;
+        }
+      | undefined)?.renderRelayHandoff;
+
+    expect(render).toBeTypeOf("function");
+    if (!render) return;
+
+    const sourceEvidence = {
+      id: "src_0123456789abcdef",
+      kind: "source",
+      source_type: "repository-file",
+      path: "docs/adr/api-errors.md",
+      start_line: 1,
+      end_line: 3,
+      content_hash: "a".repeat(64),
+      content: "Public errors include requestId.",
+      truncated: false
+    };
+    const changeEvidence = {
+      id: "chg_0123456789abcdef",
+      kind: "change",
+      source_type: "git-diff",
+      path: "src/customer.ts",
+      old_start_line: 1,
+      old_end_line: 1,
+      new_start_line: 1,
+      new_end_line: 1,
+      base_sha: "a".repeat(40),
+      head_sha: "b".repeat(40),
+      content_hash: "b".repeat(64),
+      content: "+return notFound();",
+      truncated: false
+    };
+    const contract = {
+      schema_version: 1,
+      run_id: "relay_20260715_135000_001",
+      task: "Add bulk deletion",
+      baseline_sha: "a".repeat(40),
+      head_sha: "b".repeat(40),
+      items: [
+        {
+          id: "C-001",
+          kind: "constraint",
+          priority: "required",
+          statement: "Public errors include requestId.",
+          evidence_ids: [sourceEvidence.id],
+          verification: "Check all public error responses.",
+          confidence: 1
+        }
+      ]
+    };
+    const audit = {
+      schema_version: 1,
+      run_id: contract.run_id,
+      baseline_sha: contract.baseline_sha,
+      head_sha: contract.head_sha,
+      findings: [
+        {
+          contract_id: "C-001",
+          verdict: "violated",
+          severity: "blocker",
+          evidence_ids: [sourceEvidence.id, changeEvidence.id],
+          explanation: "The new error bypasses requestId.",
+          recommended_action: "Use the shared error helper."
+        }
+      ],
+      score: 0,
+      completion_gate: "fail",
+      gate_reasons: ["Required contract item C-001 is violated."]
+    };
+
+    const handoff = render({ contract, audit, evidence: [sourceEvidence, changeEvidence] });
+    expect(handoff).toContain("# BriefOps Relay — Verified Handoff");
+    expect(handoff).toContain("C-001 · VIOLATED");
+    expect(handoff).toContain("src/customer.ts");
+    expect(handoff).not.toContain("/Users/");
+  });
+
+  it("renders a self-contained report that escapes artifact content", async () => {
+    const module = await import("../src/core/relayReport.js").catch(() => undefined);
+    const render = (module as
+      | {
+          renderRelayReport?: (input: {
+            contract: unknown;
+            audit: unknown;
+            evidence: unknown;
+          }) => string;
+        }
+      | undefined)?.renderRelayReport;
+
+    expect(render).toBeTypeOf("function");
+    if (!render) return;
+
+    const sourceEvidence = {
+      id: "src_0123456789abcdef",
+      kind: "source",
+      source_type: "repository-file",
+      path: "docs/adr/api-errors.md",
+      start_line: 1,
+      end_line: 3,
+      content_hash: "a".repeat(64),
+      content: "Public errors include requestId.",
+      truncated: false
+    };
+    const contract = {
+      schema_version: 1,
+      run_id: "relay_20260715_135000_001",
+      task: "Add <script>alert(1)</script> safely",
+      baseline_sha: "a".repeat(40),
+      head_sha: "a".repeat(40),
+      items: [
+        {
+          id: "C-001",
+          kind: "constraint",
+          priority: "required",
+          statement: "Public errors include requestId.",
+          evidence_ids: [sourceEvidence.id],
+          verification: "Check all public error responses.",
+          confidence: 1
+        }
+      ]
+    };
+    const audit = {
+      schema_version: 1,
+      run_id: contract.run_id,
+      baseline_sha: contract.baseline_sha,
+      head_sha: contract.head_sha,
+      findings: [
+        {
+          contract_id: "C-001",
+          verdict: "met",
+          severity: "minor",
+          evidence_ids: [sourceEvidence.id],
+          explanation: "Verified.",
+          recommended_action: "No action needed."
+        }
+      ],
+      score: 100,
+      completion_gate: "pass",
+      gate_reasons: []
+    };
+
+    const report = render({ contract, audit, evidence: [sourceEvidence] });
+    expect(report).toContain("<!doctype html>");
+    expect(report).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(report).not.toContain("<script>alert(1)</script>");
+    expect(report).not.toContain("https://");
+    expect(report).not.toContain("src=\"");
+  });
 });
