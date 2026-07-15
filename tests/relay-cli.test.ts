@@ -185,4 +185,33 @@ describe("Relay CLI", () => {
       expect(metadata.dirty).toBe(true);
     });
   });
+
+  it("computes an evidence-independent integrity score and blocks required gaps", async () => {
+    const module = await import("../src/core/relayScore.js").catch(() => undefined);
+    const calculate = (module as
+      | {
+          calculateRelayIntegrity?: (items: Array<{
+            id: string;
+            priority: "required" | "important" | "optional";
+            verdict: "met" | "at_risk" | "violated" | "unverified";
+          }>) => { score: number; completionGate: "pass" | "fail"; gateReasons: string[] };
+        }
+      | undefined)?.calculateRelayIntegrity;
+
+    expect(calculate).toBeTypeOf("function");
+    if (!calculate) return;
+
+    expect(
+      calculate([
+        { id: "C-001", priority: "required", verdict: "met" },
+        { id: "C-002", priority: "important", verdict: "at_risk" },
+        { id: "C-003", priority: "optional", verdict: "violated" }
+      ])
+    ).toEqual({ score: 67, completionGate: "pass", gateReasons: [] });
+    expect(calculate([{ id: "C-001", priority: "required", verdict: "unverified" }])).toEqual({
+      score: 0,
+      completionGate: "fail",
+      gateReasons: ["Required contract item C-001 is unverified."]
+    });
+  });
 });
