@@ -20,7 +20,7 @@ history for the duration of judging.
 | Deterministic context assembly and token budgeting | Yes | Preserved |
 | Repository-wide source scanning | No | Line-addressable, bounded evidence collector |
 | Git-diff evidence | No | Baseline-to-current diff collector and change evidence |
-| GPT-5.6 product integration | No | Explicit, opt-in Responses API calls for contract generation and audit |
+| GPT-5.6 product integration | No | Deferred until the fully offline workflow is complete and live use is explicitly authorized |
 | Task-scoped execution contract | No | Evidence-backed contract with validated citations |
 | Contract-vs-diff audit | No | Per-item verdicts, deterministic integrity score, completion gate |
 | Static audit report | No | Self-contained HTML report generated from local artifacts |

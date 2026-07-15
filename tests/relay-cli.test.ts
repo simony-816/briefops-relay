@@ -120,6 +120,33 @@ describe("Relay CLI", () => {
     });
   });
 
+  it("collects real Git diff evidence for a prepared run without semantic analysis", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace(dir);
+      await fs.writeFile(path.join(dir, "README.md"), "baseline\n", "utf8");
+      await execFileAsync("git", ["init"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.email", "relay@example.test"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.name", "Relay Test"], { cwd: dir });
+      await execFileAsync("git", ["add", "README.md"], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "baseline"], { cwd: dir });
+
+      const originalCwd = process.cwd();
+      process.chdir(dir);
+      try {
+        await buildProgram().parseAsync(["node", "briefops", "relay", "prepare", "Inspect docs", "--dry-run"]);
+        await fs.writeFile(path.join(dir, "README.md"), "changed\n", "utf8");
+        const runs = await fs.readdir(path.join(dir, ".briefops", "relay", "runs"));
+        await buildProgram().parseAsync(["node", "briefops", "relay", "audit", "--run", runs[0] as string, "--collect-diff"]);
+        const diffEvidence = JSON.parse(
+          await fs.readFile(path.join(dir, ".briefops", "relay", "runs", runs[0] as string, "diff-evidence.json"), "utf8")
+        ) as Array<{ path: string }>;
+        expect(diffEvidence).toEqual([expect.objectContaining({ path: "README.md" })]);
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
+  });
+
   it("validates Relay manifests without absolute paths", async () => {
     const module = await import("../src/schemas/relay.js").catch(() => undefined);
     const schema = (module as { relayManifestSchema?: { parse: (value: unknown) => unknown } } | undefined)

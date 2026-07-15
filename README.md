@@ -44,6 +44,52 @@ Everything important lives in local files under `.briefops/`.
 
 BriefOps can generate Codex skill-plugin assets, but the plugin calls the local CLI and local `.briefops/` workspace. No hosted service or required marketplace is involved.
 
+## BriefOps Relay — Build Week Preview
+
+BriefOps Relay is the Build Week addition to this derivative repository. It
+turns bounded repository evidence into a reviewable execution-contract loop:
+
+```text
+prepare evidence → validate contract/audit → integrity gate → handoff → static report
+```
+
+The currently shipped loop is deliberately API-key-free. It validates evidence
+references, contract coverage, and a deterministic integrity score; the seeded
+demo shows a context-drift violation before any model integration is enabled.
+
+### 60-second offline demo
+
+From a checkout of this repository:
+
+```bash
+npm install
+npm run build
+node dist/index.js relay demo
+node dist/index.js relay audit --run latest
+node dist/index.js relay handoff --run latest
+node dist/index.js relay report --run latest
+```
+
+All artifacts are written beneath `.briefops/relay/runs/`. The demo requires
+neither an API key nor network access. `report.html` is self-contained and can
+be opened directly from the generated run directory.
+
+### Prepare evidence for a real task
+
+```bash
+briefops relay prepare "Add bulk deletion support to the customer API" --dry-run
+briefops relay audit --run latest --collect-diff
+```
+
+This produces a bounded manifest and line-addressable repository evidence while
+excluding secret-bearing files; the second command captures hunk-level Git
+evidence from the recorded baseline. The live semantic contract and diff
+analysis path is intentionally deferred until the offline workflow is complete
+and a model integration is explicitly enabled.
+
+For the Build Week boundary and implementation record, see
+[`PREEXISTING.md`](PREEXISTING.md) and [`BUILD_LOG.md`](BUILD_LOG.md).
+
 ## Release Status
 
 BriefOps 2.2.0 is the current npm-ready release for developers who want a local-first memory and context ledger for AI coding agents. It packages the 2.1 Master Harness routing, continuity observability, strict release-readiness checks, evidence anchors, workspace-lock hardening, the fresh-thread environment gate that treats missing local CLI setup as `Status: setup-required`, runtime readiness checks for local plugin and prompt drift, and evaluation failures that exit nonzero.

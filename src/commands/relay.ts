@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { Command } from "commander";
 import { collectRelayEvidence } from "../core/relayEvidence.js";
+import { collectRelayDiffEvidence } from "../core/relayDiff.js";
 import { BriefOpsError } from "../core/errors.js";
 import { inspectRelayGit } from "../core/relayGit.js";
 import { formatDateStamp, workspacePaths } from "../core/paths.js";
@@ -84,9 +85,25 @@ export function registerRelayCommands(program: Command): void {
     .command("audit")
     .description("Validate the evidence, coverage, and deterministic score of an offline audit artifact.")
     .option("--run <run>", "Relay run ID or latest", "latest")
-    .action(async (options: { run: string }) => {
+    .option("--collect-diff", "Collect Git hunk evidence without performing semantic analysis.")
+    .action(async (options: { run: string; collectDiff?: boolean }) => {
       const cwd = process.cwd();
       await requireWorkspace(cwd);
+      if (options.collectDiff) {
+        const runDir = await resolveRelayRunDirectory(cwd, options.run);
+        const manifest = relayManifestSchema.parse(
+          JSON.parse(await readTextFile(path.join(runDir, "manifest.json"))) as unknown
+        );
+        const evidence = await collectRelayDiffEvidence({
+          cwd,
+          baselineSha: manifest.baseline_sha,
+          headSha: manifest.head_sha
+        });
+        await writeTextFileAtomic(path.join(runDir, "diff-evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
+        console.log(`Relay diff evidence saved: ${path.join(runDir, "diff-evidence.json")}`);
+        console.log(`Change evidence: ${evidence.length}`);
+        return;
+      }
       const runDir = await resolveRelayRunDirectory(cwd, options.run, ["contract.json", "audit.json", "evidence.json"]);
       const [contract, audit, evidence] = await Promise.all([
         readTextFile(path.join(runDir, "contract.json")).then((raw) => JSON.parse(raw) as unknown),
