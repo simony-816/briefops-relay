@@ -95,8 +95,31 @@ briefops relay audit --run latest --collect-diff
 This produces a bounded manifest and line-addressable repository evidence while
 excluding secret-bearing files; the second command captures hunk-level Git
 evidence from the recorded baseline. The live semantic contract and diff
-analysis path is intentionally deferred until the offline workflow is complete
-and a model integration is explicitly enabled.
+analysis path is available through an explicit provider and `--allow-network`.
+
+### Semantic providers and authentication
+
+Relay supports two explicit providers:
+
+- `codex` uses the locally authenticated Codex CLI. Authenticate once with
+  `codex login`; Relay then executes an ephemeral, read-only, schema-constrained
+  Codex task. This path uses the user's Codex/ChatGPT entitlement rather than
+  an API key.
+- `openai` uses the Responses API with `OPENAI_API_KEY`, `store: false`, and
+  structured JSON output. It is available for teams that prefer a project API
+  key and direct API observability.
+
+Both live paths require an intentional network flag because bounded repository
+evidence is sent to the chosen provider:
+
+```bash
+briefops relay prepare "Add bulk deletion support" --allow-network --provider codex
+briefops relay audit --run latest --allow-network --provider codex
+```
+
+Use `--provider openai` only when a project API key is configured. Relay never
+reads or exposes a Codex token; it delegates authentication to the installed
+Codex CLI.
 
 For the Build Week boundary and implementation record, see
 [`PREEXISTING.md`](PREEXISTING.md) and [`BUILD_LOG.md`](BUILD_LOG.md).

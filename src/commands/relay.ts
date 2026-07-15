@@ -10,9 +10,21 @@ import { createRelayDemoArtifacts } from "../core/relayDemo.js";
 import { renderRelayHandoff } from "../core/relayHandoff.js";
 import { renderRelayReport } from "../core/relayReport.js";
 import { validateRelayAudit, validateRelayContract } from "../core/relayContract.js";
+import { generateWithCodexCli, generateWithOpenAIResponses } from "../core/relayProvider.js";
+import { buildRelayAudit, buildRelayContract, type RelaySemanticProvider } from "../core/relaySemantic.js";
 import { readTextFile, writeTextFileAtomic } from "../core/storage.js";
 import { requireWorkspace } from "../core/workspace.js";
 import { relayManifestSchema } from "../schemas/relay.js";
+
+function semanticProvider(name: string): RelaySemanticProvider {
+  if (name === "codex") return { generate: generateWithCodexCli };
+  if (name === "openai") {
+    return {
+      generate: (request) => generateWithOpenAIResponses(request, { apiKey: process.env.OPENAI_API_KEY ?? "" })
+    };
+  }
+  throw new BriefOpsError(`Unsupported Relay provider: ${name}. Use codex or openai.`);
+}
 
 export function registerRelayCommands(program: Command): void {
   const relay = program
@@ -23,9 +35,11 @@ export function registerRelayCommands(program: Command): void {
     .command("prepare <task>")
     .description("Collect repository evidence for a task-scoped execution contract.")
     .option("--dry-run", "Write the outgoing-data manifest without making a network request.")
+    .option("--allow-network", "Explicitly allow a semantic provider call.")
+    .option("--provider <provider>", "Semantic provider: codex or openai", "codex")
     .action(async (task: string, options: Record<string, unknown>) => {
-      if (!options.dryRun) {
-        throw new BriefOpsError("Live Relay prepare is not available yet. Re-run with --dry-run.");
+      if (!options.dryRun && !options.allowNetwork) {
+        throw new BriefOpsError("Live Relay prepare requires --allow-network. Use --dry-run to inspect evidence locally.");
       }
 
       const cwd = process.cwd();
@@ -63,6 +77,19 @@ export function registerRelayCommands(program: Command): void {
         `${JSON.stringify(collection.evidence, null, 2)}\n`
       );
 
+      if (!options.dryRun) {
+        const contract = await buildRelayContract({
+          task,
+          runId,
+          baselineSha: git.baselineSha,
+          headSha: git.headSha,
+          evidence: collection.evidence,
+          provider: semanticProvider(String(options.provider))
+        });
+        await writeTextFileAtomic(path.join(runDir, "contract.json"), `${JSON.stringify(contract, null, 2)}\n`);
+        console.log(`Relay contract saved: ${path.join(runDir, "contract.json")}`);
+      }
+
       console.log(`Relay dry run saved: ${runDir}`);
       console.log(`Evidence: ${collection.evidence.length}`);
       console.log(`Included files: ${includedPaths.length}`);
@@ -86,7 +113,9 @@ export function registerRelayCommands(program: Command): void {
     .description("Validate the evidence, coverage, and deterministic score of an offline audit artifact.")
     .option("--run <run>", "Relay run ID or latest", "latest")
     .option("--collect-diff", "Collect Git hunk evidence without performing semantic analysis.")
-    .action(async (options: { run: string; collectDiff?: boolean }) => {
+    .option("--allow-network", "Explicitly allow a semantic provider call.")
+    .option("--provider <provider>", "Semantic provider: codex or openai", "codex")
+    .action(async (options: { run: string; collectDiff?: boolean; allowNetwork?: boolean; provider: string }) => {
       const cwd = process.cwd();
       await requireWorkspace(cwd);
       if (options.collectDiff) {
@@ -102,6 +131,22 @@ export function registerRelayCommands(program: Command): void {
         await writeTextFileAtomic(path.join(runDir, "diff-evidence.json"), `${JSON.stringify(evidence, null, 2)}\n`);
         console.log(`Relay diff evidence saved: ${path.join(runDir, "diff-evidence.json")}`);
         console.log(`Change evidence: ${evidence.length}`);
+        return;
+      }
+      if (options.allowNetwork) {
+        const runDir = await resolveRelayRunDirectory(cwd, options.run, ["manifest.json", "contract.json", "evidence.json"]);
+        const [manifest, contract, sourceEvidence] = await Promise.all([
+          readTextFile(path.join(runDir, "manifest.json")).then((raw) => relayManifestSchema.parse(JSON.parse(raw) as unknown)),
+          readTextFile(path.join(runDir, "contract.json")).then((raw) => JSON.parse(raw) as unknown),
+          readTextFile(path.join(runDir, "evidence.json")).then((raw) => JSON.parse(raw) as unknown)
+        ]);
+        const changeEvidence = await collectRelayDiffEvidence({ cwd, baselineSha: manifest.baseline_sha, headSha: manifest.head_sha });
+        const evidence = [...(sourceEvidence as unknown[]), ...changeEvidence];
+        await writeTextFileAtomic(path.join(runDir, "diff-evidence.json"), `${JSON.stringify(changeEvidence, null, 2)}\n`);
+        const audit = await buildRelayAudit({ contract, evidence, provider: semanticProvider(options.provider) });
+        await writeTextFileAtomic(path.join(runDir, "audit.json"), `${JSON.stringify(audit, null, 2)}\n`);
+        console.log(`Relay audit saved: ${path.join(runDir, "audit.json")}`);
+        console.log(`Integrity Score: ${audit.score} · Completion Gate: ${audit.completion_gate.toUpperCase()}`);
         return;
       }
       const runDir = await resolveRelayRunDirectory(cwd, options.run, ["contract.json", "audit.json", "evidence.json"]);
