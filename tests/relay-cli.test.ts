@@ -214,4 +214,40 @@ describe("Relay CLI", () => {
       gateReasons: ["Required contract item C-001 is unverified."]
     });
   });
+
+  it("collects hunk-level change evidence from the baseline through the worktree", async () => {
+    const module = await import("../src/core/relayDiff.js").catch(() => undefined);
+    const collect = (module as
+      | {
+          collectRelayDiffEvidence?: (options: { cwd: string; baselineSha: string; headSha: string }) => Promise<
+            Array<{ id: string; path?: string; new_start_line?: number; new_end_line?: number; content: string }>
+          >;
+        }
+      | undefined)?.collectRelayDiffEvidence;
+
+    expect(collect).toBeTypeOf("function");
+    if (!collect) return;
+
+    await withTempDir(async (dir) => {
+      await execFileAsync("git", ["init"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.email", "relay@example.test"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.name", "Relay Test"], { cwd: dir });
+      await fs.writeFile(path.join(dir, "customer.ts"), "export const requestId = 'old';\n", "utf8");
+      await execFileAsync("git", ["add", "customer.ts"], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "baseline"], { cwd: dir });
+      const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], { cwd: dir });
+      await fs.writeFile(path.join(dir, "customer.ts"), "export const requestId = 'new';\n", "utf8");
+
+      const evidence = await collect({ cwd: dir, baselineSha: stdout.trim(), headSha: stdout.trim() });
+      expect(evidence).toEqual([
+        expect.objectContaining({
+          id: expect.stringMatching(/^chg_[a-f0-9]{16}$/),
+          path: "customer.ts",
+          new_start_line: 1,
+          new_end_line: 1,
+          content: expect.stringContaining("+export const requestId = 'new';")
+        })
+      ]);
+    });
+  });
 });
