@@ -74,6 +74,17 @@ All artifacts are written beneath `.briefops/relay/runs/`. The demo requires
 neither an API key nor network access. `report.html` is self-contained and can
 be opened directly from the generated run directory.
 
+Reproduce the seeded evaluation:
+
+```bash
+npm run relay:eval
+```
+
+The current fixture expects one violation (`C-001`) and verifies precision,
+recall, and valid evidence-reference rate. Its scope is intentionally small;
+it demonstrates the artifact-validation boundary rather than claiming a broad
+benchmark.
+
 ### Prepare evidence for a real task
 
 ```bash
