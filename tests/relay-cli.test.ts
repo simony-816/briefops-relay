@@ -250,4 +250,148 @@ describe("Relay CLI", () => {
       ]);
     });
   });
+
+  it("accepts only execution contracts grounded in known source evidence", async () => {
+    const module = await import("../src/core/relayContract.js").catch(() => undefined);
+    const validate = (module as
+      | {
+          validateRelayContract?: (contract: unknown, evidence: unknown) => {
+            items: Array<{ id: string }>;
+          };
+        }
+      | undefined)?.validateRelayContract;
+
+    expect(validate).toBeTypeOf("function");
+    if (!validate) return;
+
+    const evidence = [
+      {
+        id: "src_0123456789abcdef",
+        kind: "source",
+        source_type: "repository-file",
+        path: "docs/adr/api-errors.md",
+        start_line: 1,
+        end_line: 3,
+        content_hash: "a".repeat(64),
+        content: "Public errors include requestId.",
+        truncated: false
+      }
+    ];
+    const contract = {
+      schema_version: 1,
+      run_id: "relay_20260715_135000_001",
+      task: "Add bulk deletion",
+      baseline_sha: "a".repeat(40),
+      head_sha: "a".repeat(40),
+      items: [
+        {
+          id: "C-001",
+          kind: "constraint",
+          priority: "required",
+          statement: "Public errors include requestId.",
+          evidence_ids: ["src_0123456789abcdef"],
+          verification: "Check all public error responses.",
+          confidence: 1
+        }
+      ]
+    };
+
+    expect(validate(contract, evidence).items).toHaveLength(1);
+    expect(() =>
+      validate({ ...contract, items: [{ ...contract.items[0], evidence_ids: ["src_ffffffffffffffff"] }] }, evidence)
+    ).toThrow("unknown evidence ID");
+  });
+
+  it("rejects audit reports that omit contract items or claim a model-selected score", async () => {
+    const module = await import("../src/core/relayContract.js").catch(() => undefined);
+    const validateContract = (module as { validateRelayContract?: (contract: unknown, evidence: unknown) => unknown } | undefined)
+      ?.validateRelayContract;
+    const validateAudit = (module as
+      | {
+          validateRelayAudit?: (contract: unknown, audit: unknown, evidence: unknown) => {
+            score: number;
+            completion_gate: string;
+          };
+        }
+      | undefined)?.validateRelayAudit;
+
+    expect(validateContract).toBeTypeOf("function");
+    expect(validateAudit).toBeTypeOf("function");
+    if (!validateContract || !validateAudit) return;
+
+    const sourceEvidence = {
+      id: "src_0123456789abcdef",
+      kind: "source",
+      source_type: "repository-file",
+      path: "docs/adr/api-errors.md",
+      start_line: 1,
+      end_line: 3,
+      content_hash: "a".repeat(64),
+      content: "Public errors include requestId.",
+      truncated: false
+    };
+    const changeEvidence = {
+      id: "chg_0123456789abcdef",
+      kind: "change",
+      source_type: "git-diff",
+      path: "src/customer.ts",
+      old_start_line: 1,
+      old_end_line: 1,
+      new_start_line: 1,
+      new_end_line: 1,
+      base_sha: "a".repeat(40),
+      head_sha: "b".repeat(40),
+      content_hash: "b".repeat(64),
+      content: "+return notFound();",
+      truncated: false
+    };
+    const contract = {
+      schema_version: 1,
+      run_id: "relay_20260715_135000_001",
+      task: "Add bulk deletion",
+      baseline_sha: "a".repeat(40),
+      head_sha: "b".repeat(40),
+      items: [
+        {
+          id: "C-001",
+          kind: "constraint",
+          priority: "required",
+          statement: "Public errors include requestId.",
+          evidence_ids: [sourceEvidence.id],
+          verification: "Check all public error responses.",
+          confidence: 1
+        }
+      ]
+    };
+    const audit = {
+      schema_version: 1,
+      run_id: contract.run_id,
+      baseline_sha: contract.baseline_sha,
+      head_sha: contract.head_sha,
+      findings: [
+        {
+          contract_id: "C-001",
+          verdict: "violated",
+          severity: "blocker",
+          evidence_ids: [sourceEvidence.id, changeEvidence.id],
+          explanation: "The new error bypasses requestId.",
+          recommended_action: "Use the shared error helper."
+        }
+      ],
+      score: 0,
+      completion_gate: "fail",
+      gate_reasons: ["Required contract item C-001 is violated."]
+    };
+
+    expect(validateAudit(validateContract(contract, [sourceEvidence]), audit, [sourceEvidence, changeEvidence])).toMatchObject({
+      score: 0,
+      completion_gate: "fail"
+    });
+    expect(() =>
+      validateAudit(validateContract(contract, [sourceEvidence]), { ...audit, score: 100 }, [sourceEvidence, changeEvidence])
+    ).toThrow("does not match the deterministic integrity score");
+    expect(() =>
+      validateAudit(validateContract(contract, [sourceEvidence]), { ...audit, findings: [] }, [sourceEvidence, changeEvidence])
+    ).toThrow("must have exactly one finding");
+  });
 });
