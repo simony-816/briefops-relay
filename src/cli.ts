@@ -20,6 +20,7 @@ import { registerObsCommands } from "./commands/obs.js";
 import { registerPackCommands } from "./commands/pack.js";
 import { registerPrimeCommand } from "./commands/prime.js";
 import { registerProjectCommands } from "./commands/project.js";
+import { registerRelayCommands } from "./commands/relay.js";
 import { registerSkillCommands } from "./commands/skill.js";
 import { registerWorkerCommands } from "./commands/worker.js";
 import { briefopsVersion } from "./version.js";
@@ -55,6 +56,7 @@ export function buildProgram(): Command {
   registerWorkerCommands(program);
   registerInspectCommands(program);
   registerCompareCommands(program);
+  registerRelayCommands(program);
 
   return program;
 }
