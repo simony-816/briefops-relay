@@ -25,6 +25,13 @@ describe("Relay CLI", () => {
     expect(prepare?.helpInformation()).toContain("--dry-run");
   });
 
+  it("offers offline demo, handoff, and report commands", () => {
+    const relay = buildProgram().commands.find((command) => command.name() === "relay");
+    const commandNames = relay?.commands.map((command) => command.name());
+
+    expect(commandNames).toEqual(expect.arrayContaining(["audit", "demo", "handoff", "report"]));
+  });
+
   it("collects stable line-aware evidence while excluding secret files", async () => {
     const module = await import("../src/core/relayEvidence.js").catch(() => undefined);
     const collect = (module as
@@ -551,5 +558,27 @@ describe("Relay CLI", () => {
     expect(report).not.toContain("<script>alert(1)</script>");
     expect(report).not.toContain("https://");
     expect(report).not.toContain("src=\"");
+  });
+
+  it("creates an API-key-free demo run with report and handoff artifacts", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace(dir);
+      const originalCwd = process.cwd();
+      process.chdir(dir);
+      try {
+        await buildProgram().parseAsync(["node", "briefops", "relay", "demo"]);
+        await buildProgram().parseAsync(["node", "briefops", "relay", "audit", "--run", "latest"]);
+      } finally {
+        process.chdir(originalCwd);
+      }
+
+      const runs = await fs.readdir(path.join(dir, ".briefops", "relay", "runs"));
+      expect(runs).toHaveLength(1);
+      const runDirectory = path.join(dir, ".briefops", "relay", "runs", runs[0] as string);
+      await expect(fs.readFile(path.join(runDirectory, "contract.json"), "utf8")).resolves.toContain("C-002");
+      await expect(fs.readFile(path.join(runDirectory, "audit.json"), "utf8")).resolves.toContain("violated");
+      await expect(fs.readFile(path.join(runDirectory, "handoff.md"), "utf8")).resolves.toContain("Verified Handoff");
+      await expect(fs.readFile(path.join(runDirectory, "report.html"), "utf8")).resolves.toContain("<!doctype html>");
+    });
   });
 });
