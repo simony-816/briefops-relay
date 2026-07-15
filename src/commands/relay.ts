@@ -5,6 +5,7 @@ import { BriefOpsError } from "../core/errors.js";
 import { formatDateStamp, workspacePaths } from "../core/paths.js";
 import { writeTextFileAtomic } from "../core/storage.js";
 import { requireWorkspace } from "../core/workspace.js";
+import { relayManifestSchema } from "../schemas/relay.js";
 
 export function registerRelayCommands(program: Command): void {
   const relay = program
@@ -31,7 +32,7 @@ export function registerRelayCommands(program: Command): void {
       const runId = `relay_${formatDateStamp()}`;
       const runDir = path.join(workspacePaths(cwd).root, "relay", "runs", runId);
       const includedPaths = [...new Set(collection.evidence.map((item) => item.path))].sort();
-      const manifest = {
+      const manifest = relayManifestSchema.parse({
         schema_version: 1,
         run_id: runId,
         task,
@@ -43,7 +44,7 @@ export function registerRelayCommands(program: Command): void {
         ),
         included_paths: includedPaths,
         excluded: collection.excluded
-      };
+      });
 
       await writeTextFileAtomic(path.join(runDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
       await writeTextFileAtomic(

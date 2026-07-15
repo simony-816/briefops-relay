@@ -92,4 +92,38 @@ describe("Relay CLI", () => {
       });
     });
   });
+
+  it("validates Relay manifests without absolute paths", async () => {
+    const module = await import("../src/schemas/relay.js").catch(() => undefined);
+    const schema = (module as { relayManifestSchema?: { parse: (value: unknown) => unknown } } | undefined)
+      ?.relayManifestSchema;
+
+    expect(schema).toBeDefined();
+    if (!schema) return;
+
+    expect(
+      schema.parse({
+        schema_version: 1,
+        run_id: "relay_20260715_135000_001",
+        task: "Inspect docs",
+        network_permitted: false,
+        evidence_count: 1,
+        total_bytes: 12,
+        included_paths: ["README.md"],
+        excluded: { secret: 1 }
+      })
+    ).toBeTruthy();
+    expect(() =>
+      schema.parse({
+        schema_version: 1,
+        run_id: "relay_20260715_135000_001",
+        task: "Inspect docs",
+        network_permitted: false,
+        evidence_count: 1,
+        total_bytes: 12,
+        included_paths: ["/Users/simon/private.txt"],
+        excluded: {}
+      })
+    ).toThrow();
+  });
 });
