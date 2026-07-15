@@ -1,6 +1,6 @@
 # BriefOps Relay Build Week Design
 
-Status: approved at the product-direction level by the user on 2026-07-15; this repository-specific design requires final user review before implementation planning.
+Status: approved by the project owner on 2026-07-15. Implementation preparation began from `buildweek-baseline` (`cc18c0320cec84bc8f61347a96ca336478c55342`).
 
 ## Decision Summary
 
