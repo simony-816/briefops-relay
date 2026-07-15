@@ -34,7 +34,8 @@ describe("Codex plugin package", () => {
       "skills/briefops-prime-context/SKILL.md",
       "skills/briefops-finish-task/SKILL.md",
       "skills/briefops-review-memory/SKILL.md",
-      "skills/briefops-continue-worker/SKILL.md"
+      "skills/briefops-continue-worker/SKILL.md",
+      "skills/briefops-relay-task/SKILL.md"
     ]);
 
     for (const file of files) {
@@ -52,6 +53,10 @@ describe("Codex plugin package", () => {
       files.find((file) => file.relativePath === "skills/briefops-prime-context/SKILL.md")
         ?.content
     ).toContain("Do not continue by silently skipping BriefOps");
+    expect(
+      files.find((file) => file.relativePath === "skills/briefops-relay-task/SKILL.md")
+        ?.content
+    ).toContain("briefops relay demo");
   });
 
   it("keeps committed plugin files in sync with generated content", async () => {
