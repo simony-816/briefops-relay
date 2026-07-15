@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -6,6 +6,20 @@ import { promisify } from "node:util";
 import { BriefOpsError } from "./errors.js";
 
 const execFileAsync = promisify(execFile);
+
+async function runCodexWithPrompt(command: string, args: string[], prompt: string): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ["pipe", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString("utf8"); });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolve();
+      else reject(Object.assign(new Error("Codex CLI exited unsuccessfully."), { stderr }));
+    });
+    child.stdin.end(prompt);
+  });
+}
 
 export type RelayStructuredRequest = {
   prompt: string;
@@ -33,13 +47,11 @@ export async function generateWithCodexCli(
     "--ephemeral",
     "--sandbox",
     "read-only",
-    "--ask-for-approval",
-    "never",
     "--output-schema",
     schemaPath,
     "--output-last-message",
     outputPath,
-    request.prompt
+    "-"
   ];
   try {
     await fs.writeFile(schemaPath, `${JSON.stringify(request.schema)}\n`, "utf8");
@@ -50,9 +62,14 @@ export async function generateWithCodexCli(
       throw new BriefOpsError("Codex CLI is not authenticated. Run `codex login` before using --provider codex.");
     }
     try {
-      await execFileAsync(options.codexPath ?? "codex", args, { maxBuffer: 2_000_000 });
-    } catch {
-      throw new BriefOpsError("Codex CLI could not complete the Relay semantic task.");
+      await runCodexWithPrompt(options.codexPath ?? "codex", args, request.prompt);
+    } catch (error) {
+      const stderr = String((error as { stderr?: unknown }).stderr ?? "")
+        .replace(/\bsk-[A-Za-z0-9_-]+/g, "[redacted]")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 500);
+      throw new BriefOpsError(`Codex CLI could not complete the Relay semantic task.${stderr ? ` ${stderr}` : ""}`);
     }
     return parseStructuredJson(await fs.readFile(outputPath, "utf8"), "Codex CLI");
   } finally {

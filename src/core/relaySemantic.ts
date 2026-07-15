@@ -16,8 +16,20 @@ const auditOutputSchema = z.object({ findings: z.array(auditFindingSchema).min(1
 
 export type RelaySemanticProvider = { generate(request: { prompt: string; schema: Record<string, unknown>; schemaName: string }): Promise<unknown> };
 
-const contractSchema: Record<string, unknown> = { type: "object", additionalProperties: false, required: ["items"], properties: { items: { type: "array" } } };
-const auditSchema: Record<string, unknown> = { type: "object", additionalProperties: false, required: ["findings"], properties: { findings: { type: "array" } } };
+const contractSchema: Record<string, unknown> = {
+  type: "object", additionalProperties: false, required: ["items"], properties: {
+    items: { type: "array", items: { type: "object", additionalProperties: false, required: ["kind", "priority", "statement", "evidence_ids", "verification", "confidence"], properties: {
+      kind: { type: "string", enum: ["requirement", "constraint", "decision", "risk"] }, priority: { type: "string", enum: ["required", "important", "optional"] }, statement: { type: "string" }, evidence_ids: { type: "array", items: { type: "string" } }, verification: { type: "string" }, confidence: { type: "number" }
+    } } }
+  }
+};
+const auditSchema: Record<string, unknown> = {
+  type: "object", additionalProperties: false, required: ["findings"], properties: {
+    findings: { type: "array", items: { type: "object", additionalProperties: false, required: ["contract_id", "verdict", "severity", "evidence_ids", "explanation", "recommended_action"], properties: {
+      contract_id: { type: "string" }, verdict: { type: "string", enum: ["met", "at_risk", "violated", "unverified"] }, severity: { type: "string", enum: ["blocker", "major", "minor"] }, evidence_ids: { type: "array", items: { type: "string" } }, explanation: { type: "string" }, recommended_action: { type: "string" }
+    } } }
+  }
+};
 
 export async function buildRelayContract(input: {
   task: string;
