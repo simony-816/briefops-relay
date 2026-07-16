@@ -53,9 +53,10 @@ turns bounded repository evidence into a reviewable execution-contract loop:
 prepare evidence → validate contract/audit → integrity gate → handoff → static report
 ```
 
-The currently shipped loop is deliberately API-key-free. It validates evidence
-references, contract coverage, and a deterministic integrity score; the seeded
-demo shows a context-drift violation before any model integration is enabled.
+The default demo is deliberately API-key-free. It validates evidence references,
+contract coverage, and a deterministic integrity score; an explicit Codex or
+Responses provider can generate the live Contract and Audit when network use is
+approved.
 
 ### 60-second offline demo
 
@@ -80,10 +81,11 @@ Reproduce the seeded evaluation:
 npm run relay:eval
 ```
 
-The current fixture expects one violation (`C-001`) and verifies precision,
-recall, and valid evidence-reference rate. Its scope is intentionally small;
-it demonstrates the artifact-validation boundary rather than claiming a broad
-benchmark.
+The base fixture expects one violation (`C-001`) and verifies precision, recall,
+and valid evidence-reference rate. It also runs six deterministic integrity
+scenarios: a known violation, unknown evidence, duplicate findings, a missing
+finding, score tampering, and an all-met control. This is artifact-validation
+coverage, not a claim about broad model accuracy.
 
 ### Prepare evidence for a real task
 
