@@ -1,4 +1,5 @@
 import path from "node:path";
+import { promises as fs } from "node:fs";
 import type { Command } from "commander";
 import { collectRelayEvidence } from "../core/relayEvidence.js";
 import { collectRelayDiffEvidence } from "../core/relayDiff.js";
@@ -11,7 +12,13 @@ import { renderRelayHandoff } from "../core/relayHandoff.js";
 import { renderRelayReport } from "../core/relayReport.js";
 import { validateRelayAudit, validateRelayContract } from "../core/relayContract.js";
 import { generateWithCodexCli, generateWithOpenAIResponses, inspectCodexCli } from "../core/relayProvider.js";
-import { buildRelayAudit, buildRelayContract, type RelaySemanticProvider } from "../core/relaySemantic.js";
+import {
+  buildRelayAudit,
+  buildRelayContract,
+  RelaySemanticOutputError,
+  serializeRelaySemanticFailure,
+  type RelaySemanticProvider
+} from "../core/relaySemantic.js";
 import { readTextFile, writeTextFileAtomic } from "../core/storage.js";
 import { requireWorkspace } from "../core/workspace.js";
 import { relayManifestSchema } from "../schemas/relay.js";
@@ -24,6 +31,27 @@ function semanticProvider(name: string): RelaySemanticProvider {
     };
   }
   throw new BriefOpsError(`Unsupported Relay provider: ${name}. Use codex or openai.`);
+}
+
+async function writeRelaySemanticFailure(runDir: string, error: unknown): Promise<void> {
+  if (!(error instanceof RelaySemanticOutputError)) return;
+  await writeTextFileAtomic(
+    path.join(runDir, "semantic-failure.json"),
+    `${JSON.stringify(serializeRelaySemanticFailure(error), null, 2)}\n`
+  );
+}
+
+async function readRelayRunEvidence(runDir: string): Promise<unknown[]> {
+  const sourceEvidence = JSON.parse(await readTextFile(path.join(runDir, "evidence.json"))) as unknown[];
+  const diffPath = path.join(runDir, "diff-evidence.json");
+  try {
+    await fs.access(diffPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return sourceEvidence;
+    throw error;
+  }
+  const changeEvidence = JSON.parse(await readTextFile(diffPath)) as unknown[];
+  return [...sourceEvidence, ...changeEvidence];
 }
 
 export function registerRelayCommands(program: Command): void {
@@ -68,7 +96,7 @@ export function registerRelayCommands(program: Command): void {
         schema_version: 1,
         run_id: runId,
         task,
-        network_permitted: false,
+        network_permitted: Boolean(options.allowNetwork),
         evidence_count: collection.evidence.length,
         total_bytes: collection.evidence.reduce(
           (total, item) => total + Buffer.byteLength(item.content, "utf8"),
@@ -88,16 +116,21 @@ export function registerRelayCommands(program: Command): void {
       );
 
       if (!options.dryRun) {
-        const contract = await buildRelayContract({
-          task,
-          runId,
-          baselineSha: git.baselineSha,
-          headSha: git.headSha,
-          evidence: collection.evidence,
-          provider: semanticProvider(String(options.provider))
-        });
-        await writeTextFileAtomic(path.join(runDir, "contract.json"), `${JSON.stringify(contract, null, 2)}\n`);
-        console.log(`Relay contract saved: ${path.join(runDir, "contract.json")}`);
+        try {
+          const contract = await buildRelayContract({
+            task,
+            runId,
+            baselineSha: git.baselineSha,
+            headSha: git.headSha,
+            evidence: collection.evidence,
+            provider: semanticProvider(String(options.provider))
+          });
+          await writeTextFileAtomic(path.join(runDir, "contract.json"), `${JSON.stringify(contract, null, 2)}\n`);
+          console.log(`Relay contract saved: ${path.join(runDir, "contract.json")}`);
+        } catch (error) {
+          await writeRelaySemanticFailure(runDir, error);
+          throw error;
+        }
       }
 
       console.log(`Relay dry run saved: ${runDir}`);
@@ -153,17 +186,22 @@ export function registerRelayCommands(program: Command): void {
         const changeEvidence = await collectRelayDiffEvidence({ cwd, baselineSha: manifest.baseline_sha, headSha: manifest.head_sha });
         const evidence = [...(sourceEvidence as unknown[]), ...changeEvidence];
         await writeTextFileAtomic(path.join(runDir, "diff-evidence.json"), `${JSON.stringify(changeEvidence, null, 2)}\n`);
-        const audit = await buildRelayAudit({ contract, evidence, provider: semanticProvider(options.provider) });
-        await writeTextFileAtomic(path.join(runDir, "audit.json"), `${JSON.stringify(audit, null, 2)}\n`);
-        console.log(`Relay audit saved: ${path.join(runDir, "audit.json")}`);
-        console.log(`Integrity Score: ${audit.score} · Completion Gate: ${audit.completion_gate.toUpperCase()}`);
+        try {
+          const audit = await buildRelayAudit({ contract, evidence, provider: semanticProvider(options.provider) });
+          await writeTextFileAtomic(path.join(runDir, "audit.json"), `${JSON.stringify(audit, null, 2)}\n`);
+          console.log(`Relay audit saved: ${path.join(runDir, "audit.json")}`);
+          console.log(`Integrity Score: ${audit.score} · Completion Gate: ${audit.completion_gate.toUpperCase()}`);
+        } catch (error) {
+          await writeRelaySemanticFailure(runDir, error);
+          throw error;
+        }
         return;
       }
       const runDir = await resolveRelayRunDirectory(cwd, options.run, ["contract.json", "audit.json", "evidence.json"]);
       const [contract, audit, evidence] = await Promise.all([
         readTextFile(path.join(runDir, "contract.json")).then((raw) => JSON.parse(raw) as unknown),
         readTextFile(path.join(runDir, "audit.json")).then((raw) => JSON.parse(raw) as unknown),
-        readTextFile(path.join(runDir, "evidence.json")).then((raw) => JSON.parse(raw) as unknown)
+        readRelayRunEvidence(runDir)
       ]);
       const validatedContract = validateRelayContract(contract, evidence);
       const validatedAudit = validateRelayAudit(validatedContract, audit, evidence);
@@ -187,7 +225,7 @@ export function registerRelayCommands(program: Command): void {
         const [contract, audit, evidence] = await Promise.all([
           readTextFile(path.join(runDir, "contract.json")).then((raw) => JSON.parse(raw) as unknown),
           readTextFile(path.join(runDir, "audit.json")).then((raw) => JSON.parse(raw) as unknown),
-          readTextFile(path.join(runDir, "evidence.json")).then((raw) => JSON.parse(raw) as unknown)
+          readRelayRunEvidence(runDir)
         ]);
         const outputName = name === "handoff" ? "handoff.md" : "report.html";
         await writeTextFileAtomic(path.join(runDir, outputName), render({ contract, audit, evidence }));

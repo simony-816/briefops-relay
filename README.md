@@ -130,6 +130,11 @@ Use `--provider openai` only when a project API key is configured. Relay never
 reads or exposes a Codex token; it delegates authentication to the installed
 Codex CLI.
 
+If a provider returns structured output that fails Relay's schema, contract, or
+evidence validation, the rejected output is retained only in that local run as
+`semantic-failure.json`. This makes failures reviewable without treating an
+unverified model result as a Contract or Audit artifact.
+
 For the Build Week boundary and implementation record, see
 [`PREEXISTING.md`](PREEXISTING.md) and [`BUILD_LOG.md`](BUILD_LOG.md).
 

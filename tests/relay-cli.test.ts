@@ -128,6 +128,36 @@ describe("Relay CLI", () => {
     });
   });
 
+  it("records explicit network permission even when a live provider is rejected", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace(dir);
+      await fs.writeFile(path.join(dir, "README.md"), "# Relay\n", "utf8");
+      await execFileAsync("git", ["init"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.email", "relay@example.test"], { cwd: dir });
+      await execFileAsync("git", ["config", "user.name", "Relay Test"], { cwd: dir });
+      await execFileAsync("git", ["add", "README.md"], { cwd: dir });
+      await execFileAsync("git", ["commit", "-m", "baseline"], { cwd: dir });
+
+      const originalCwd = process.cwd();
+      process.chdir(dir);
+      try {
+        await expect(
+          buildProgram().parseAsync([
+            "node", "briefops", "relay", "prepare", "Inspect docs", "--allow-network", "--provider", "unsupported"
+          ])
+        ).rejects.toThrow("Unsupported Relay provider");
+      } finally {
+        process.chdir(originalCwd);
+      }
+
+      const runs = await fs.readdir(path.join(dir, ".briefops", "relay", "runs"));
+      const manifest = JSON.parse(
+        await fs.readFile(path.join(dir, ".briefops", "relay", "runs", runs[0] as string, "manifest.json"), "utf8")
+      ) as { network_permitted: boolean };
+      expect(manifest.network_permitted).toBe(true);
+    });
+  });
+
   it("collects real Git diff evidence for a prepared run without semantic analysis", async () => {
     await withTempDir(async (dir) => {
       await initWorkspace(dir);
@@ -614,6 +644,29 @@ describe("Relay CLI", () => {
       await expect(fs.readFile(path.join(runDirectory, "audit.json"), "utf8")).resolves.toContain("violated");
       await expect(fs.readFile(path.join(runDirectory, "handoff.md"), "utf8")).resolves.toContain("Verified Handoff");
       await expect(fs.readFile(path.join(runDirectory, "report.html"), "utf8")).resolves.toContain("<!doctype html>");
+    });
+  });
+
+  it("renders handoff and report when Git diff evidence is stored separately", async () => {
+    await withTempDir(async (dir) => {
+      await initWorkspace(dir);
+      const originalCwd = process.cwd();
+      process.chdir(dir);
+      try {
+        await buildProgram().parseAsync(["node", "briefops", "relay", "demo"]);
+        const runDir = path.join(dir, ".briefops", "relay", "runs", "relay_20260715_000000_001");
+        const evidence = JSON.parse(await fs.readFile(path.join(runDir, "evidence.json"), "utf8")) as Array<{ kind: string }>;
+        await fs.writeFile(path.join(runDir, "evidence.json"), `${JSON.stringify(evidence.filter((item) => item.kind === "source"), null, 2)}\n`, "utf8");
+        await fs.writeFile(path.join(runDir, "diff-evidence.json"), `${JSON.stringify(evidence.filter((item) => item.kind === "change"), null, 2)}\n`, "utf8");
+        await buildProgram().parseAsync(["node", "briefops", "relay", "handoff", "--run", "latest"]);
+        await buildProgram().parseAsync(["node", "briefops", "relay", "report", "--run", "latest"]);
+      } finally {
+        process.chdir(originalCwd);
+      }
+
+      const runDir = path.join(dir, ".briefops", "relay", "runs", "relay_20260715_000000_001");
+      await expect(fs.readFile(path.join(runDir, "handoff.md"), "utf8")).resolves.toContain("src/routes/customers.ts");
+      await expect(fs.readFile(path.join(runDir, "report.html"), "utf8")).resolves.toContain("src/routes/customers.ts");
     });
   });
 });
