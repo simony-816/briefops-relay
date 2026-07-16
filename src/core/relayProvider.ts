@@ -27,6 +27,24 @@ export type RelayStructuredRequest = {
   schemaName: string;
 };
 
+type CodexStatusRunner = (args: string[]) => Promise<{ stdout: string }>;
+
+export async function inspectCodexCli(
+  options: { codexPath?: string; runner?: CodexStatusRunner } = {}
+): Promise<{ version: string }> {
+  const runner = options.runner ?? (async (args: string[]) => {
+    const { stdout } = await execFileAsync(options.codexPath ?? "codex", args, { maxBuffer: 20_000 });
+    return { stdout };
+  });
+  try {
+    await runner(["login", "status"]);
+    const { stdout } = await runner(["--version"]);
+    return { version: stdout.trim() || "unknown" };
+  } catch {
+    throw new BriefOpsError("Codex CLI is not authenticated. Run `codex login` before using --provider codex.");
+  }
+}
+
 function parseStructuredJson(raw: string, provider: string): unknown {
   try {
     return JSON.parse(raw.trim());
@@ -56,11 +74,7 @@ export async function generateWithCodexCli(
   try {
     await fs.writeFile(schemaPath, `${JSON.stringify(request.schema)}\n`, "utf8");
     if (options.runner) return parseStructuredJson(await options.runner(args), "Codex CLI");
-    try {
-      await execFileAsync(options.codexPath ?? "codex", ["login", "status"], { maxBuffer: 20_000 });
-    } catch {
-      throw new BriefOpsError("Codex CLI is not authenticated. Run `codex login` before using --provider codex.");
-    }
+    await inspectCodexCli({ codexPath: options.codexPath });
     try {
       await runCodexWithPrompt(options.codexPath ?? "codex", args, request.prompt);
     } catch (error) {

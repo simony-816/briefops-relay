@@ -10,7 +10,7 @@ import { createRelayDemoArtifacts } from "../core/relayDemo.js";
 import { renderRelayHandoff } from "../core/relayHandoff.js";
 import { renderRelayReport } from "../core/relayReport.js";
 import { validateRelayAudit, validateRelayContract } from "../core/relayContract.js";
-import { generateWithCodexCli, generateWithOpenAIResponses } from "../core/relayProvider.js";
+import { generateWithCodexCli, generateWithOpenAIResponses, inspectCodexCli } from "../core/relayProvider.js";
 import { buildRelayAudit, buildRelayContract, type RelaySemanticProvider } from "../core/relaySemantic.js";
 import { readTextFile, writeTextFileAtomic } from "../core/storage.js";
 import { requireWorkspace } from "../core/workspace.js";
@@ -30,6 +30,16 @@ export function registerRelayCommands(program: Command): void {
   const relay = program
     .command("relay")
     .description("Create and audit evidence-backed execution contracts.");
+
+  relay
+    .command("doctor")
+    .description("Check Codex provider readiness without running a semantic task.")
+    .action(async () => {
+      const { version } = await inspectCodexCli();
+      console.log("Relay Codex provider: ready");
+      console.log(`Codex CLI: ${version}`);
+      console.log("No model request was made.");
+    });
 
   relay
     .command("prepare <task>")

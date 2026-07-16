@@ -32,6 +32,14 @@ describe("Relay CLI", () => {
     expect(commandNames).toEqual(expect.arrayContaining(["audit", "demo", "handoff", "report"]));
   });
 
+  it("offers a Codex provider readiness check without a semantic call", () => {
+    const relay = buildProgram().commands.find((command) => command.name() === "relay");
+    const doctor = relay?.commands.find((command) => command.name() === "doctor");
+
+    expect(doctor).toBeDefined();
+    expect(doctor?.description()).toContain("Codex");
+  });
+
   it("collects stable line-aware evidence while excluding secret files", async () => {
     const module = await import("../src/core/relayEvidence.js").catch(() => undefined);
     const collect = (module as

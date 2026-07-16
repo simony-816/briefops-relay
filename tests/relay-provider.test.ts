@@ -1,6 +1,31 @@
 import { describe, expect, it } from "vitest";
 
 describe("Relay semantic providers", () => {
+  it("checks Codex CLI readiness without sending a semantic prompt", async () => {
+    const module = await import("../src/core/relayProvider.js").catch(() => undefined);
+    const inspect = (module as
+      | {
+          inspectCodexCli?: (options: {
+            runner: (args: string[]) => Promise<{ stdout: string }>;
+          }) => Promise<{ version: string }>;
+        }
+      | undefined)?.inspectCodexCli;
+
+    expect(inspect).toBeTypeOf("function");
+    if (!inspect) return;
+
+    const calls: string[][] = [];
+    const result = await inspect({
+      runner: async (args) => {
+        calls.push(args);
+        return { stdout: args[0] === "--version" ? "codex 1.2.3\n" : "Logged in using ChatGPT\n" };
+      }
+    });
+
+    expect(result).toEqual({ version: "codex 1.2.3" });
+    expect(calls).toEqual([["login", "status"], ["--version"]]);
+  });
+
   it("uses an authenticated local Codex CLI with a schema-constrained ephemeral run", async () => {
     const module = await import("../src/core/relayProvider.js").catch(() => undefined);
     const run = (module as

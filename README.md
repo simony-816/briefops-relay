@@ -107,7 +107,16 @@ Relay supports two explicit providers:
   an API key.
 - `openai` uses the Responses API with `OPENAI_API_KEY`, `store: false`, and
   structured JSON output. It is available for teams that prefer a project API
-  key and direct API observability.
+key and direct API observability.
+
+Check that the no-key Codex path is ready before transmitting any evidence:
+
+```bash
+briefops relay doctor
+```
+
+It checks local Codex authentication and version only; it does not submit a
+semantic task or consume model credits.
 
 Both live paths require an intentional network flag because bounded repository
 evidence is sent to the chosen provider:
