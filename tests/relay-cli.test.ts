@@ -647,6 +647,22 @@ describe("Relay CLI", () => {
     });
   });
 
+  it("creates an offline demo from a fresh checkout without prior workspace initialization", async () => {
+    await withTempDir(async (dir) => {
+      const originalCwd = process.cwd();
+      process.chdir(dir);
+      try {
+        await buildProgram().parseAsync(["node", "briefops", "relay", "demo"]);
+      } finally {
+        process.chdir(originalCwd);
+      }
+
+      await expect(
+        fs.readFile(path.join(dir, ".briefops", "relay", "runs", "relay_20260715_000000_001", "report.html"), "utf8")
+      ).resolves.toContain("<!doctype html>");
+    });
+  });
+
   it("renders handoff and report when Git diff evidence is stored separately", async () => {
     await withTempDir(async (dir) => {
       await initWorkspace(dir);

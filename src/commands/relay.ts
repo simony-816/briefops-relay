@@ -20,7 +20,7 @@ import {
   type RelaySemanticProvider
 } from "../core/relaySemantic.js";
 import { readTextFile, writeTextFileAtomic } from "../core/storage.js";
-import { requireWorkspace } from "../core/workspace.js";
+import { initWorkspace, requireWorkspace } from "../core/workspace.js";
 import { relayManifestSchema } from "../schemas/relay.js";
 
 function semanticProvider(name: string): RelaySemanticProvider {
@@ -143,7 +143,7 @@ export function registerRelayCommands(program: Command): void {
     .description("Create a complete API-key-free Relay demonstration run.")
     .action(async () => {
       const cwd = process.cwd();
-      await requireWorkspace(cwd);
+      await initWorkspace(cwd);
       const artifacts = createRelayDemoArtifacts();
       const runDir = relayRunDirectory(cwd, "relay_20260715_000000_001");
       await Promise.all(Object.entries(artifacts).map(([name, content]) => writeTextFileAtomic(path.join(runDir, name), content)));
